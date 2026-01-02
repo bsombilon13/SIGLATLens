@@ -1,4 +1,4 @@
-import { Filter, AspectRatio } from './types';
+import { Filter, AspectRatio, BackgroundConfig } from './types';
 
 export const FILTERS: Filter[] = [
   { id: 'none', name: 'Normal', cssClass: '' },
@@ -27,4 +27,17 @@ export const ASPECT_RATIOS: { id: AspectRatio, label: string, value: number }[] 
   { id: '3:4', label: 'Classic', value: 3/4 },
   { id: '4:5', label: 'Portrait', value: 4/5 },
   { id: '9:16', label: 'Story', value: 9/16 },
+];
+
+export const BACKGROUND_OPTIONS: BackgroundConfig[] = [
+  { type: 'color', value: '#FFFFFF' },
+  { type: 'color', value: '#000000' },
+  { type: 'color', value: '#F3F4F6' }, // Light Gray
+  { type: 'color', value: '#FEE2E2' }, // Soft Red
+  { type: 'color', value: '#DBEAFE' }, // Soft Blue
+  { type: 'gradient', value: 'Sunset', colors: ['#FF512F', '#DD2476'] },
+  { type: 'gradient', value: 'Ocean', colors: ['#2193b0', '#6dd5ed'] },
+  { type: 'gradient', value: 'Candy', colors: ['#ee9ca7', '#ffdde1'] },
+  { type: 'gradient', value: 'Neon', colors: ['#8E2DE2', '#4A00E0'] },
+  { type: 'gradient', value: 'Forest', colors: ['#11998e', '#38ef7d'] },
 ];

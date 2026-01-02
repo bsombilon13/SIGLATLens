@@ -1,4 +1,3 @@
-
 export type LayoutType = 'single' | 'grid2x2' | 'strip4';
 export type AppView = 'camera' | 'preview' | 'gallery';
 export type AspectRatio = '1:1' | '3:4' | '4:5' | '9:16';
@@ -30,6 +29,13 @@ export interface Overlay {
   size: number;
   rotation: number;
   color?: string;
+  opacity: number; // 0 to 1
+}
+
+export interface BackgroundConfig {
+  type: 'color' | 'gradient';
+  value: string; // hex color or gradient name
+  colors?: string[]; // array of colors for gradient
 }
 
 export interface PhotoboothState {

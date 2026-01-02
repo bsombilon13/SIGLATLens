@@ -51,14 +51,46 @@
       }
     }
 
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+
+    @keyframes pulseSubtle {
+      0%, 100% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+      50% { opacity: 0.9; transform: translate(-50%, -50%) scale(1.02); }
+    }
+
+    .shimmer-placeholder {
+      background: linear-gradient(90deg, #1a1a1a 25%, #2a2a2a 50%, #1a1a1a 75%);
+      background-size: 200% 100%;
+      animation: shimmer 2s infinite linear;
+    }
+
     .animate-zoom-out {
       animation: zoomOutFade 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    }
+
+    .animate-pulse-subtle {
+      animation: pulseSubtle 2s infinite ease-in-out;
     }
 
     .stagger-1 { animation-delay: 0.1s; }
     .stagger-2 { animation-delay: 0.2s; }
     .stagger-3 { animation-delay: 0.3s; }
     .stagger-4 { animation-delay: 0.4s; }
+
+    /* Custom Color Picker Styling */
+    input[type="color"] {
+      -webkit-appearance: none;
+      border: none;
+      width: 0;
+      height: 0;
+      padding: 0;
+      margin: 0;
+      position: absolute;
+      visibility: hidden;
+    }
   </style>
 <script type="importmap">
 {
