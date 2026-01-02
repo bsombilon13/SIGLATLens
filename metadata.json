@@ -1,0 +1,7 @@
+{
+  "name": "SIGLATLens Photobooth",
+  "description": "A high-performance mobile photobooth with real-time filters, customizable timers, and vibrant orange theme.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
