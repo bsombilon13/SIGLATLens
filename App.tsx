@@ -1,8 +1,7 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { LayoutType, CapturedPhoto, Filter, Overlay } from './types';
-import { FILTERS, LAYOUT_CONFIGS } from './constants';
-import { CameraIcon, LayoutIcon, RefreshIcon, FilterIcon, DownloadIcon, TimerIcon } from './components/Icons';
+import { LayoutType, AppView, CapturedPhoto, Filter, Overlay, GalleryItem, AspectRatio } from './types';
+import { FILTERS, LAYOUT_CONFIGS, ASPECT_RATIOS } from './constants';
+import { CameraIcon, LayoutIcon, RefreshIcon, FilterIcon, DownloadIcon, TimerIcon, GalleryIcon } from './components/Icons';
 import { getSmartCaption } from './services/geminiService';
 
 const STICKERS = ['✨', '❤️', '🔥', '📸', '✌️', '😎', '🎉', '🌟', '🌈', '💎', '🎨', '🍕', '🐱', '🦋', '⚡️', '🦄'];
@@ -15,18 +14,25 @@ interface GestureState {
   initialRotation: number;
 }
 
+const STORAGE_KEY = 'siglat_gallery';
+
 const App: React.FC = () => {
-  const [view, setView] = useState<'camera' | 'preview'>('camera');
+  const [view, setView] = useState<AppView>('camera');
   const [layout, setLayout] = useState<LayoutType>('grid2x2');
+  const [printRatio, setPrintRatio] = useState<AspectRatio>('3:4');
   const [activeFilter, setActiveFilter] = useState<Filter>(FILTERS[0]);
   const [isCapturing, setIsCapturing] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [countdownDuration, setCountdownDuration] = useState<number>(3);
   const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
+  const [allSavedPhotos, setAllSavedPhotos] = useState<GalleryItem[]>([]);
+  const [selectedGalleryImage, setSelectedGalleryImage] = useState<GalleryItem | null>(null);
+  
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [showTimerMenu, setShowTimerMenu] = useState(false);
   const [showDecorationMenu, setShowDecorationMenu] = useState(false);
+  const [showRatioMenu, setShowRatioMenu] = useState(false);
   const [aiCaption, setAiCaption] = useState<string | null>(null);
   const [overlays, setOverlays] = useState<Overlay[]>([]);
   const [activeOverlayId, setActiveOverlayId] = useState<string | null>(null);
@@ -36,6 +42,23 @@ const App: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        setAllSavedPhotos(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse gallery storage", e);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (allSavedPhotos.length > 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(allSavedPhotos));
+    }
+  }, [allSavedPhotos]);
 
   const initCamera = useCallback(async () => {
     try {
@@ -47,7 +70,7 @@ const App: React.FC = () => {
           facingMode: 'user', 
           width: { ideal: 1080 }, 
           height: { ideal: 1920 },
-          aspectRatio: { ideal: 0.75 } // 3:4
+          aspectRatio: { ideal: 0.75 } 
         },
         audio: false
       });
@@ -72,6 +95,7 @@ const App: React.FC = () => {
 
   const getCanvasFilterString = (filterId: string) => {
     switch (filterId) {
+      case 'arctic': return 'sepia(40%) hue-rotate(170deg) saturate(50%) brightness(110%)';
       case 'grayscale': return 'grayscale(100%)';
       case 'sepia': return 'sepia(100%)';
       case 'warm': return 'brightness(110%) contrast(90%) saturate(150%) sepia(20%)';
@@ -79,6 +103,10 @@ const App: React.FC = () => {
       case 'vibrant': return 'saturate(200%) contrast(110%)';
       case 'noir': return 'grayscale(100%) contrast(140%) brightness(75%)';
       case 'dramatic': return 'contrast(120%) brightness(90%) saturate(80%)';
+      case 'emerald': return 'hue-rotate(140deg) saturate(150%) contrast(110%)';
+      case 'rose': return 'hue-rotate(320deg) saturate(120%) brightness(110%)';
+      case 'cyber': return 'hue-rotate(240deg) saturate(200%) brightness(105%) contrast(125%)';
+      case 'film': return 'sepia(0.15) contrast(0.9) brightness(1.05) saturate(0.8)';
       default: return 'none';
     }
   };
@@ -158,6 +186,15 @@ const App: React.FC = () => {
       getSmartCaption(photos[0].dataUrl).then(setAiCaption);
     }
   }, [view, photos]);
+
+  const movePhoto = (index: number, direction: 'up' | 'down') => {
+    const newPhotos = [...photos];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex >= 0 && targetIndex < newPhotos.length) {
+      [newPhotos[index], newPhotos[targetIndex]] = [newPhotos[targetIndex], newPhotos[index]];
+      setPhotos(newPhotos);
+    }
+  };
 
   const addSticker = (sticker: string) => {
     const newOverlay: Overlay = {
@@ -245,19 +282,25 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = (saveOnly: boolean = false) => {
     const resultCanvas = document.createElement('canvas');
     const ctx = resultCanvas.getContext('2d');
     if (!ctx || photos.length === 0) return;
 
     const config = LAYOUT_CONFIGS[layout];
-    const imgWidth = 900;
-    const imgHeight = 1200;
+    const ratioVal = ASPECT_RATIOS.find(r => r.id === printRatio)?.value || (3/4);
+    
+    const slotWidth = 900;
+    const slotHeight = slotWidth / (3/4); 
+
     const padding = 60;
     const brandingHeight = 200;
     
-    resultCanvas.width = (imgWidth * config.cols) + (padding * (config.cols + 1));
-    resultCanvas.height = (imgHeight * config.rows) + (padding * (config.rows + 1)) + brandingHeight;
+    const contentWidth = (slotWidth * config.cols) + (padding * (config.cols + 1));
+    const contentHeight = (slotHeight * config.rows) + (padding * (config.rows + 1));
+
+    resultCanvas.width = contentWidth;
+    resultCanvas.height = Math.max(contentHeight + brandingHeight, contentWidth / ratioVal);
 
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, resultCanvas.width, resultCanvas.height);
@@ -266,16 +309,17 @@ const App: React.FC = () => {
     photos.forEach((photo, index) => {
       const col = index % config.cols;
       const row = Math.floor(index / config.cols);
-      const x = padding + (col * (imgWidth + padding));
-      const y = padding + (row * (imgHeight + padding));
+      const x = padding + (col * (slotWidth + padding));
+      const y = padding + (row * (slotHeight + padding));
 
       const img = new Image();
       img.src = photo.dataUrl;
       img.onload = () => {
-        ctx.drawImage(img, x, y, imgWidth, imgHeight);
+        ctx.drawImage(img, x, y, slotWidth, slotHeight);
         loadedCount++;
         if (loadedCount === photos.length) {
-          ctx.fillStyle = '#de4928'; // Use theme color for branding on print
+          // Branding - NO NUMBERS DRAWN HERE
+          ctx.fillStyle = '#de4928'; 
           ctx.font = 'italic bold 42px Plus Jakarta Sans';
           ctx.textAlign = 'center';
           ctx.fillText(aiCaption || "SIGLATLens Moment", resultCanvas.width / 2, resultCanvas.height - 110);
@@ -284,6 +328,7 @@ const App: React.FC = () => {
           ctx.font = '500 24px Plus Jakarta Sans';
           ctx.fillText(new Date().toLocaleDateString() + " • SIGLATLens", resultCanvas.width / 2, resultCanvas.height - 60);
 
+          // Overlays
           overlays.forEach(overlay => {
             const canvasX = (overlay.x / 100) * resultCanvas.width;
             const canvasY = (overlay.y / 100) * (resultCanvas.height - brandingHeight);
@@ -307,10 +352,21 @@ const App: React.FC = () => {
             ctx.restore();
           });
 
-          const link = document.createElement('a');
-          link.download = `siglat-lens-${Date.now()}.png`;
-          link.href = resultCanvas.toDataURL('image/png', 1.0);
-          link.click();
+          const dataUrl = resultCanvas.toDataURL('image/png', 0.8);
+          
+          const newItem: GalleryItem = {
+            id: Date.now().toString(),
+            dataUrl,
+            timestamp: Date.now()
+          };
+          setAllSavedPhotos(prev => [newItem, ...prev]);
+
+          if (!saveOnly) {
+            const link = document.createElement('a');
+            link.download = `siglat-lens-${Date.now()}.png`;
+            link.href = dataUrl;
+            link.click();
+          }
         }
       };
     });
@@ -328,30 +384,75 @@ const App: React.FC = () => {
     setShowFilterMenu(false);
     setShowTimerMenu(false);
     setShowDecorationMenu(false);
+    setShowRatioMenu(false);
     setActiveOverlayId(null);
   };
 
+  const renderGallery = () => (
+    <div className="w-full h-full flex flex-col bg-[#0a0a0a] animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="px-6 py-6 flex items-center justify-between border-b border-white/5">
+        <h2 className="text-2xl font-black tracking-tighter text-theme-gradient">Gallery</h2>
+        <button onClick={() => setView('camera')} className="bg-white/5 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest active:scale-95 transition-all">Back</button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4">
+        {allSavedPhotos.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center opacity-30 text-center px-8">
+            <GalleryIcon />
+            <p className="mt-4 font-bold text-sm">Your gallery is empty.<br/>Take some photos to see them here!</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pb-24">
+            {allSavedPhotos.map((item) => (
+              <div 
+                key={item.id} 
+                onClick={() => setSelectedGalleryImage(item)}
+                className="relative aspect-[3/4] bg-neutral-900 rounded-xl overflow-hidden active:scale-95 transition-transform cursor-pointer group shadow-lg"
+              >
+                <img 
+                  src={item.dataUrl} 
+                  loading="lazy" 
+                  className="w-full h-full object-cover transition-opacity duration-500" 
+                  alt="Gallery Item" 
+                  onLoad={(e) => (e.currentTarget.style.opacity = '1')} 
+                  style={{ opacity: 0 }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-screen bg-black text-white overflow-hidden relative">
-      {/* Header with SIGLAT Branding */}
       <div className="flex items-center justify-between px-6 py-5 z-10 bg-gradient-to-b from-black/60 to-transparent">
         <h1 className="text-2xl font-extrabold tracking-tighter">
           <span className="text-theme-gradient">SIGLAT</span><span className="text-white/90">Lens</span>
         </h1>
-        {view === 'preview' && (
-          <button onClick={reset} className="p-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full active:scale-95 transition-all">
-            <RefreshIcon />
-          </button>
-        )}
+        <div className="flex gap-2">
+          {view === 'camera' && (
+             <button onClick={() => setView('gallery')} className="p-3 bg-white/10 backdrop-blur-md border border-white/10 rounded-full active:scale-95 transition-all relative">
+                <GalleryIcon />
+                {allSavedPhotos.length > 0 && <div className="absolute top-0 right-0 w-3 h-3 bg-[#de4928] rounded-full border-2 border-black"></div>}
+             </button>
+          )}
+          {(view === 'preview' || view === 'gallery') && (
+            <button onClick={reset} className="p-2 bg-white/10 backdrop-blur-md border border-white/10 rounded-full active:scale-95 transition-all">
+              <RefreshIcon />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 relative flex items-center justify-center overflow-hidden">
-        {view === 'camera' ? (
+        {view === 'gallery' ? (
+          renderGallery()
+        ) : view === 'camera' ? (
           <div className="w-full h-full relative overflow-hidden bg-neutral-900 flex items-center justify-center">
             <div className={`relative w-full h-full transition-all duration-300 ${activeFilter.cssClass}`}>
               <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover scale-x-[-1]" />
             </div>
-            {/* Camera Guides */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="w-full aspect-[3/4] border border-white/20 shadow-[0_0_0_100vmax_rgba(0,0,0,0.6)]"></div>
             </div>
@@ -377,9 +478,22 @@ const App: React.FC = () => {
               }`}
             >
               {photos.map((p, idx) => (
-                <div key={p.id} className={`relative aspect-[3/4] bg-neutral-100 overflow-hidden rounded-lg opacity-0 animate-zoom-out stagger-${idx + 1}`}>
+                <div key={p.id} className={`relative group aspect-[3/4] bg-neutral-100 overflow-hidden rounded-lg opacity-0 animate-zoom-out stagger-${idx + 1}`}>
                   <img src={p.dataUrl} className="w-full h-full object-cover" alt="Captured" />
-                  <div className="absolute top-2 left-2 bg-theme-gradient text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-bold shadow-md">{idx+1}</div>
+                  
+                  {/* Reorder Buttons - NO NUMBERS HERE */}
+                  <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-opacity">
+                    {idx > 0 && (
+                      <button onClick={() => movePhoto(idx, 'up')} className="p-2 bg-white/20 backdrop-blur-md rounded-full text-white">
+                        <svg className="w-6 h-6 rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                      </button>
+                    )}
+                    {idx < photos.length - 1 && (
+                      <button onClick={() => movePhoto(idx, 'down')} className="p-2 bg-white/20 backdrop-blur-md rounded-full text-white">
+                         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
               
@@ -419,7 +533,53 @@ const App: React.FC = () => {
         )}
       </div>
 
-      {/* Modern Glassmorphic Menus */}
+      {selectedGalleryImage && (
+        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl animate-in fade-in duration-300 flex flex-col">
+          <div className="p-6 flex justify-between items-center">
+            <span className="text-xs font-bold uppercase tracking-widest opacity-50">{new Date(selectedGalleryImage.timestamp).toLocaleString()}</span>
+            <button 
+              onClick={() => setSelectedGalleryImage(null)}
+              className="w-12 h-12 flex items-center justify-center bg-white/10 rounded-full text-white text-2xl"
+            >✕</button>
+          </div>
+          <div className="flex-1 p-6 flex items-center justify-center overflow-hidden">
+             <img 
+               src={selectedGalleryImage.dataUrl} 
+               className="max-w-full max-h-full object-contain rounded-xl shadow-2xl animate-in zoom-in-95 duration-500" 
+               alt="Full View" 
+             />
+          </div>
+          <div className="p-10 flex gap-4">
+            <button 
+              onClick={() => {
+                const link = document.createElement('a');
+                link.download = `siglat-lens-${selectedGalleryImage.id}.png`;
+                link.href = selectedGalleryImage.dataUrl;
+                link.click();
+              }}
+              className="flex-1 bg-theme-gradient py-5 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-theme"
+            >
+              <DownloadIcon /> Download Again
+            </button>
+            <button 
+              onClick={() => {
+                if(confirm("Delete this memory?")) {
+                  const filtered = allSavedPhotos.filter(p => p.id !== selectedGalleryImage.id);
+                  setAllSavedPhotos(filtered);
+                  localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+                  setSelectedGalleryImage(null);
+                }
+              }}
+              className="bg-white/5 border border-white/10 p-5 rounded-2xl text-red-500"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       {showLayoutMenu && (
         <div className="absolute bottom-36 left-6 right-6 bg-neutral-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-6 grid grid-cols-3 gap-4 z-40 animate-in fade-in slide-in-from-bottom-8 duration-500 shadow-2xl">
           {(Object.keys(LAYOUT_CONFIGS) as LayoutType[]).map((key) => (
@@ -473,11 +633,26 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {showRatioMenu && (
+        <div className="absolute bottom-48 left-6 right-6 bg-neutral-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-6 flex justify-around items-center z-40 animate-in fade-in slide-in-from-bottom-8 duration-500 shadow-2xl">
+          {ASPECT_RATIOS.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => { setPrintRatio(r.id); setShowRatioMenu(false); }}
+              className={`flex flex-col items-center gap-2 p-4 rounded-[2rem] transition-all min-w-[60px] ${printRatio === r.id ? 'bg-theme-gradient shadow-theme' : 'hover:bg-white/5 bg-white/5'}`}
+            >
+              <span className="text-xs font-bold">{r.id}</span>
+              <span className="text-[8px] uppercase tracking-widest opacity-60 font-bold">{r.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {showDecorationMenu && (
         <div className="absolute bottom-52 left-6 right-6 bg-neutral-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 z-40 animate-in fade-in slide-in-from-bottom-8 duration-500 shadow-2xl">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-[10px] font-bold uppercase tracking-[0.3em] text-neutral-400">Props & Decor</h3>
-            <button onClick={addText} className="text-[10px] font-bold uppercase bg-theme-gradient px-4 py-2 rounded-full shadow-theme">+ Add Caption</button>
+            <button onClick={addText} className="text-[10px] font-bold uppercase bg-theme-gradient px-4 py-2 rounded-full shadow-theme">+ Caption</button>
           </div>
           <div className="grid grid-cols-6 gap-4 max-h-48 overflow-y-auto pr-2 no-scrollbar">
             {STICKERS.map(s => (
@@ -487,14 +662,12 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Main Control Bar */}
       <div className="safe-area-bottom bg-neutral-900/90 backdrop-blur-3xl border-t border-white/5 px-4 pt-6 pb-12 flex items-center justify-between gap-3 z-30">
         {view === 'camera' ? (
           <>
-            <button onClick={() => { setShowLayoutMenu(!showLayoutMenu); setShowFilterMenu(false); setShowTimerMenu(false); }} className={`p-4 rounded-3xl transition-all active:scale-90 ${showLayoutMenu ? 'bg-theme-gradient shadow-theme' : 'bg-white/5 border border-white/10'}`} disabled={isCapturing}><LayoutIcon /></button>
-            <button onClick={() => { setShowTimerMenu(!showTimerMenu); setShowLayoutMenu(false); setShowFilterMenu(false); }} className={`p-4 rounded-3xl transition-all active:scale-90 ${showTimerMenu ? 'bg-theme-gradient shadow-theme' : 'bg-white/5 border border-white/10'}`} disabled={isCapturing}><TimerIcon /></button>
+            <button onClick={() => { setShowLayoutMenu(!showLayoutMenu); closeMenus(); setShowLayoutMenu(!showLayoutMenu); }} className={`p-4 rounded-3xl transition-all active:scale-90 ${showLayoutMenu ? 'bg-theme-gradient shadow-theme' : 'bg-white/5 border border-white/10'}`} disabled={isCapturing}><LayoutIcon /></button>
+            <button onClick={() => { closeMenus(); setShowTimerMenu(!showTimerMenu); }} className={`p-4 rounded-3xl transition-all active:scale-90 ${showTimerMenu ? 'bg-theme-gradient shadow-theme' : 'bg-white/5 border border-white/10'}`} disabled={isCapturing}><TimerIcon /></button>
             
-            {/* Capture Button with Theme Ring */}
             <button onClick={startPhotoboothSession} disabled={isCapturing} className="relative w-24 h-24 rounded-full bg-white flex items-center justify-center active:scale-90 transition-all shadow-2xl disabled:opacity-50">
               <div className="w-20 h-20 rounded-full border-[6px] border-black/5 bg-white"></div>
               {isCapturing && (
@@ -510,17 +683,20 @@ const App: React.FC = () => {
               )}
             </button>
 
-            <button onClick={() => { setShowFilterMenu(!showFilterMenu); setShowLayoutMenu(false); setShowTimerMenu(false); }} className={`p-4 rounded-3xl transition-all active:scale-90 ${showFilterMenu ? 'bg-theme-gradient shadow-theme' : 'bg-white/5 border border-white/10'}`} disabled={isCapturing}><FilterIcon /></button>
-            <div className="w-4"></div> {/* Spacer */}
+            <button onClick={() => { closeMenus(); setShowFilterMenu(!showFilterMenu); }} className={`p-4 rounded-3xl transition-all active:scale-90 ${showFilterMenu ? 'bg-theme-gradient shadow-theme' : 'bg-white/5 border border-white/10'}`} disabled={isCapturing}><FilterIcon /></button>
+            <div className="w-4"></div>
           </>
-        ) : (
+        ) : view === 'gallery' ? null : (
           <div className="w-full flex flex-col gap-4 px-2">
-            <div className="flex gap-3 w-full">
-              <button onClick={() => setShowDecorationMenu(!showDecorationMenu)} className={`flex-1 flex items-center justify-center gap-2 py-5 rounded-[1.75rem] font-bold text-sm transition-all ${showDecorationMenu ? 'bg-white text-black' : 'bg-white/10 border border-white/10'}`}>
+            <div className="flex gap-3 w-full items-center">
+              <button onClick={() => { closeMenus(); setShowRatioMenu(!showRatioMenu); }} className={`p-5 rounded-[1.75rem] font-bold text-sm transition-all ${showRatioMenu ? 'bg-white text-black' : 'bg-white/10 border border-white/10'}`}>
+                {printRatio}
+              </button>
+              <button onClick={() => { closeMenus(); setShowDecorationMenu(!showDecorationMenu); }} className={`flex-1 flex items-center justify-center gap-2 py-5 rounded-[1.75rem] font-bold text-sm transition-all ${showDecorationMenu ? 'bg-white text-black' : 'bg-white/10 border border-white/10'}`}>
                 ✨ Decorate
               </button>
-              <button onClick={handleDownload} className="flex-[2] bg-theme-gradient text-white font-bold py-5 rounded-[1.75rem] flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-theme">
-                <DownloadIcon /> Save Digital Print
+              <button onClick={() => handleDownload(false)} className="flex-[2] bg-theme-gradient text-white font-bold py-5 rounded-[1.75rem] flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-theme">
+                <DownloadIcon /> Save & Share
               </button>
             </div>
             <button onClick={reset} className="w-full py-4 rounded-[1.5rem] text-[10px] font-extrabold tracking-[0.25em] uppercase opacity-40 hover:opacity-100 transition-all">Retake Session</button>
@@ -528,8 +704,7 @@ const App: React.FC = () => {
         )}
       </div>
 
-      {/* Menu Overlay */}
-      {(showLayoutMenu || showFilterMenu || showTimerMenu || showDecorationMenu) && (
+      {(showLayoutMenu || showFilterMenu || showTimerMenu || showDecorationMenu || showRatioMenu) && (
         <div className="fixed inset-0 z-20 bg-black/60 backdrop-blur-md" onClick={closeMenus} />
       )}
     </div>

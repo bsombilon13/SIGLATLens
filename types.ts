@@ -1,5 +1,7 @@
 
 export type LayoutType = 'single' | 'grid2x2' | 'strip4';
+export type AppView = 'camera' | 'preview' | 'gallery';
+export type AspectRatio = '1:1' | '3:4' | '4:5' | '9:16';
 
 export interface Filter {
   id: string;
@@ -11,6 +13,12 @@ export interface CapturedPhoto {
   id: string;
   dataUrl: string;
   filterId: string;
+}
+
+export interface GalleryItem {
+  id: string;
+  dataUrl: string;
+  timestamp: number;
 }
 
 export interface Overlay {
